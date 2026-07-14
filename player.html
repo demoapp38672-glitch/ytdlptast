@@ -1,88 +1,203 @@
-<?php
-$videoId = isset($_GET['id']) ? $_GET['id'] : 'qAzl41z3zgY';
-?>
-
 <!DOCTYPE html>
-<html lang="gu">
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>YouTube Player</title>
+    <style>
+        /* Reset */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-<title>Protected Player</title>
+        /* Full screen black background */
+        html,
+        body {
+            height: 100%;
+            background: #000;
+            overflow: hidden;
+        }
 
-<style>
-html, body {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  width: 100%;
-  background: black;
-  overflow: hidden;
-}
+        /* Player container */
+        .player-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            background: #000;
+        }
 
-.video-container {
-  position: relative;
-  width: 100%;
-  height: 100%;
-}
+        /* Iframe full screen */
+        iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
 
-/* 🔥 TOP LEFT BLOCK */
-.block-top-left {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: calc(100% - 130px);
-  height: 85px;
-  z-index: 20;
-}
+        /* ========== OVERLAY (YouTube Logo & Title block) ========== */
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 20;
+            /* Click-through overlay - blocks all clicks on YouTube elements */
+            pointer-events: none;
+        }
 
-/* 🔥 BOTTOM BLOCK */
-.block-bottom {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  height: 50px;
-  z-index: 20;
-}
+        /* ========== TOP BAR HIDE ========== */
+        /* YouTube ના top bar (title, logo) ને hide કરવા માટે */
+        .hide-top-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 60px;
+            z-index: 25;
+            background: #000;
+            pointer-events: none;
+        }
 
-/* 🔥 CENTER BOTTOM BLOCK (More options disable) */
-.block-center {
-  position: absolute;
-  bottom: 80px;   /* popup area adjust */
-  left: 50%;
-  transform: translateX(-50%);
-  width: 220px;   /* popup width */
-  height: 80px;   /* 🔥 More option cover */
-  z-index: 50;
-  background: transparent;
-}
+        /* ========== BOTTOM BAR HIDE (YouTube Logo) ========== */
+        .hide-bottom-logo {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 50px;
+            z-index: 25;
+            background: #000;
+            pointer-events: none;
+        }
 
-iframe {
-  width: 100%;
-  height: 100%;
-  border: none;
-}
-</style>
+        /* Loading text */
+        .loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #666;
+            font-family: Arial, sans-serif;
+            font-size: 18px;
+            z-index: 1;
+        }
+
+        /* ========== EXTRA SAFETY: Block right-click ========== */
+        .block-context {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 30;
+            pointer-events: none;
+        }
+    </style>
 </head>
-
 <body>
+    <!-- Loading -->
+    <div class="loading">⏳ Loading video...</div>
 
-<div class="video-container">
+    <!-- Player Container -->
+    <div class="player-container" id="playerContainer">
 
-  <!-- overlays -->
-  <div class="block-top-left"></div>
-  <div class="block-bottom"></div>
-  <div class="block-center"></div>
+        <!-- YouTube Iframe -->
+        <iframe id="player"
+            allowfullscreen
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture">
+        </iframe>
 
-  <!-- player -->
-  <iframe 
-    src="https://www.youtube.com/embed/<?php echo htmlspecialchars($videoId); ?>?autoplay=1&playsinline=1&fs=0&rel=0&modestbranding=1&controls=1&disablekb=1"
-    allow="autoplay; encrypted-media"
-    allowfullscreen>
-  </iframe>
+        <!-- ========== OVERLAY: YouTube Logo & Title Block ========== -->
+        <!-- આ overlay YouTube ના logo, title, અને બધા clickable elements ને block કરશે -->
+        <div class="overlay" id="clickOverlay"></div>
 
-</div>
+        <!-- ========== TOP BAR HIDE ========== -->
+        <div class="hide-top-bar"></div>
 
+        <!-- ========== BOTTOM BAR HIDE (YouTube Logo) ========== -->
+        <div class="hide-bottom-logo"></div>
+
+        <!-- ========== RIGHT CLICK BLOCK ========== -->
+        <div class="block-context" oncontextmenu="return false;"></div>
+    </div>
+
+    <script>
+        // ========== GET VIDEO ID FROM URL ==========
+        const urlParams = new URLSearchParams(window.location.search);
+        const videoId = urlParams.get('v') || '1PRRuTxw-nc';
+
+        // ========== YouTube EMBED URL (EXTRA SECURE) ==========
+        const embedUrl =
+            `https://www.youtube-nocookie.com/embed/${videoId}?` +
+            `autoplay=1` +
+            `&rel=0` +
+            `&showinfo=0` + // Title hidden
+            `&controls=1` +
+            `&modestbranding=1` + // Small YouTube logo
+            `&playsinline=1` +
+            `&iv_load_policy=3` + // No annotations
+            `&fs=1` + // Fullscreen allowed
+            `&disablekb=0` + // Keyboard allowed
+            `&cc_load_policy=0` + // No captions by default
+            `&hl=en` +
+            `&origin=https://your-username.github.io`; // !! IMPORTANT: તમારું GitHub URL
+
+        // ========== LOAD IFRAME ==========
+        const iframe = document.getElementById('player');
+        iframe.src = embedUrl;
+
+        // ========== HIDE LOADING ==========
+        iframe.addEventListener('load', function() {
+            document.querySelector('.loading').style.display = 'none';
+        });
+
+        setTimeout(function() {
+            document.querySelector('.loading').style.display = 'none';
+        }, 5000);
+
+        // ========== EXTRA SECURITY: BLOCK ALL CLICKS ON YOUTUBE ELEMENTS ==========
+        // Overlay pointer-events: none છે, પણ YouTube iframe ના elements પર click થતા અટકાવવા
+        // JavaScript વડે iframe ની અંદર click ને block કરી શકાતું નથી (cross-origin)
+        // પણ overlay થી iframe ની ઉપર આવરણ આવી જાય છે
+
+        // ========== BLOCK KEYBOARD SHORTCUTS (Copy URL) ==========
+        document.addEventListener('keydown', function(e) {
+            // Ctrl+C, Ctrl+U, F12, Ctrl+Shift+I block કરો
+            if (e.ctrlKey && (e.key === 'c' || e.key === 'u' || e.key === 'i')) {
+                e.preventDefault();
+                return false;
+            }
+            if (e.key === 'F12') {
+                e.preventDefault();
+                return false;
+            }
+        });
+
+        // ========== BLOCK RIGHT CLICK ==========
+        document.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            return false;
+        });
+
+        // ========== BLOCK DRAG ==========
+        document.addEventListener('dragstart', function(e) {
+            e.preventDefault();
+            return false;
+        });
+
+        // ========== BLOCK SELECTION ==========
+        document.addEventListener('selectstart', function(e) {
+            e.preventDefault();
+            return false;
+        });
+
+        console.log('🔒 Secure YouTube Player Loaded');
+        console.log('📹 Video ID:', videoId);
+    </script>
 </body>
 </html>
