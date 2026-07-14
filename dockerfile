@@ -1,8 +1,8 @@
+# તમારા એપ માટે Dockerfile (ઉદાહરણ)
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# ffmpeg ઇન્સ્ટોલ કરો (yt-dlp માટે જરૂરી)
 RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
