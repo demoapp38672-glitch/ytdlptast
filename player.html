@@ -1,0 +1,196 @@
+<?php
+// mydomina.php
+$videoId = isset($_GET['id']) ? preg_replace('/[^a-zA-Z0-9_-]/', '', $_GET['id']) : '';
+if (!$videoId) {
+    echo "No video id provided. Use ?id=VIDEO_ID";
+    exit;
+}
+?>
+<!doctype html>
+<html lang="gu">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MyDomina Player</title>
+<style>
+  html,body{height:100%;margin:0;background:#000;color:#fff;font-family:system-ui, Arial;overflow:hidden;}
+  .player-wrap{position:relative;width:100%;height:100vh;display:flex;align-items:center;justify-content:center;}
+  .iframe-container{position:relative;width:100%;height:100%;background:#000;}
+  #player iframe{position:absolute; top:0; left:0; width:100%; height:100%; border:0; z-index:10;}
+
+  /* આખી સ્ક્રીન પર ક્લિક એરિયા */
+  .click-overlay { position: absolute; top: 0; bottom: 80px; left:0; right:0; z-index: 55; background: transparent; cursor: pointer; }
+
+  .top-blocker{position:absolute;top:0;left:0;width:100%;height:60px;z-index:56;}
+  .logo-blocker{position:absolute;right:0;bottom:75px;width:100px;height:45px;z-index:56;}
+
+  /* Skip Visual Feedback */
+  .skip-label { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.2); color: white; padding: 15px 25px; border-radius: 50%; font-size: 16px; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 58; backdrop-filter: blur(5px); border: 1px solid rgba(255,255,255,0.3); }
+  .skip-label.show { opacity: 1; }
+
+  .pause-overlay{
+      position:absolute; inset:0; z-index:54; 
+      display:flex; align-items:center; justify-content:center; 
+      background: transparent; visibility:hidden; opacity:0; transition: opacity 0.2s;
+  }
+  .pause-overlay.visible{ visibility:visible; opacity:1; }
+  .big-play { width:70px; height:70px; border-radius:50%; background: rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; border: 1px solid rgba(255,255,255,0.4); }
+
+  .controls-overlay{
+    position:absolute; bottom:15px; left:50%; transform:translateX(-50%);
+    width:calc(100% - 30px); max-width:1100px;
+    display:flex; gap:10px; align-items:center; padding:10px;
+    background: transparent; z-index:60;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+  }
+  .controls-overlay.hidden{ opacity:0; transform: translateX(-50%) translateY(30px); pointer-events:none; }
+
+  .btn { background: rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.3); padding:6px 12px; border-radius:5px; color:#fff; cursor:pointer; font-size:13px; backdrop-filter: blur(4px); }
+  .progress { flex-grow:1; cursor:pointer; accent-color: #f00; height: 5px; background: rgba(255,255,255,0.2); border-radius: 5px; }
+  .time { font-size:12px; min-width:85px; text-align:center; text-shadow: 1px 1px 3px #000; }
+  .control-select { background: rgba(0,0,0,0.6); color:#fff; border:1px solid rgba(255,255,255,0.3); padding:5px; border-radius:4px; font-size:12px; cursor:pointer; }
+</style>
+</head>
+<body>
+<div class="player-wrap" id="playerWrap">
+  <div class="iframe-container" id="iframe-container">
+    <div id="player"></div>
+    
+    <div class="click-overlay" id="clickOverlay"></div>
+
+    <div class="skip-label" id="skipLabelLeft" style="left: 15%;">⇠ 10s</div>
+    <div class="skip-label" id="skipLabelRight" style="right: 15%;">10s ⇢</div>
+    
+    <div class="top-blocker"></div>
+    <div class="logo-blocker"></div>
+
+    <div id="pauseOverlay" class="pause-overlay">
+      <div class="big-play"><svg viewBox="0 0 24 24" width="40" height="40" fill="white"><path d="M8 5v14l11-7z"></path></svg></div>
+    </div>
+
+    <div class="controls-overlay" id="controlsOverlay">
+      <button class="btn" id="playBtn">Pause</button>
+      <input type="range" id="progress" class="progress" min="0" max="100" value="0" step="0.1">
+      <div class="time" id="timeLabel">0:00 / 0:00</div>
+      <select id="speedSelect" class="control-select"><option value="0.5">0.5x</option><option value="1" selected>1x</option><option value="1.5">1.5x</option><option value="2">2x</option></select>
+      <select id="qualitySelect" class="control-select"><option value="default">Auto Quality</option></select>
+      <button class="btn" id="fsBtn">Full</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  var tag = document.createElement('script'); tag.src = "https://www.youtube.com/iframe_api"; document.head.appendChild(tag);
+  var player, videoId = "<?php echo $videoId; ?>", dragging = false;
+  var clickTimer = null;
+
+  function onYouTubeIframeAPIReady() {
+    player = new YT.Player('player', {
+      height: '100%', width: '100%', videoId: videoId,
+      playerVars: { 'controls': 0, 'modestbranding': 1, 'rel': 0, 'showinfo': 0, 'iv_load_policy': 3, 'enablejsapi': 1 },
+      events: { 'onReady': onReady, 'onStateChange': onStateChange }
+    });
+  }
+
+  function onReady() { updateQualityOptions(); setInterval(updateUI, 500); }
+
+  function onStateChange(e) {
+    var controls = document.getElementById('controlsOverlay');
+    var overlay = document.getElementById('pauseOverlay');
+    if (e.data === YT.PlayerState.PAUSED) { overlay.classList.add('visible'); controls.classList.add('hidden'); }
+    else { overlay.classList.remove('visible'); controls.classList.remove('hidden'); }
+  }
+
+  // --- Double Click & Single Click Logic ---
+  document.getElementById('clickOverlay').addEventListener('click', function(e) {
+    var rect = this.getBoundingClientRect();
+    var x = e.clientX - rect.left; // ક્લિક ક્યાં થયું તે માપવા
+    var width = rect.width;
+
+    if (clickTimer == null) {
+        // પહેલી ક્લિક
+        clickTimer = setTimeout(function () {
+            // જો 300ms સુધી બીજી ક્લિક ન આવે તો Play/Pause કરો
+            if (player.getPlayerState() === 1) player.pauseVideo(); else player.playVideo();
+            clickTimer = null;
+        }, 300);
+    } else {
+        // બીજી ક્લિક (Double Click થઈ ગઈ)
+        clearTimeout(clickTimer);
+        clickTimer = null;
+
+        // જમણી બાજુ ડબલ ક્લિક -> Forward 10s
+        if (x > width / 2) {
+            player.seekTo(player.getCurrentTime() + 10, true);
+            showFeedback('skipLabelRight');
+        } 
+        // ડાબી બાજુ ડબલ ક્લિક -> Backward 10s
+        else {
+            player.seekTo(player.getCurrentTime() - 10, true);
+            showFeedback('skipLabelLeft');
+        }
+    }
+  });
+
+  function showFeedback(id) {
+    var el = document.getElementById(id);
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 600);
+  }
+
+  var hideTimeout;
+  function showControlsBriefly() {
+    var controls = document.getElementById('controlsOverlay');
+    controls.classList.remove('hidden');
+    clearTimeout(hideTimeout);
+    hideTimeout = setTimeout(function() { if (player.getPlayerState() === 1) controls.classList.add('hidden'); }, 3500);
+  }
+
+  document.getElementById('playerWrap').addEventListener('mousemove', showControlsBriefly);
+
+  function updateUI() {
+    if (!player || dragging) return;
+    var cur = player.getCurrentTime(), dur = player.getDuration();
+    if (dur > 0) {
+        document.getElementById('progress').value = (cur / dur) * 100;
+        document.getElementById('timeLabel').textContent = formatTime(cur) + " / " + formatTime(dur);
+    }
+    document.getElementById('playBtn').textContent = player.getPlayerState() === 1 ? 'Pause' : 'Play';
+  }
+
+  function formatTime(s) {
+    var h = Math.floor(s/3600), m = Math.floor((s%3600)/60), s = Math.floor(s%60);
+    return (h > 0 ? h + ":" : "") + (m < 10 && h > 0 ? "0" + m : m) + ":" + (s < 10 ? "0" + s : s);
+  }
+
+  function updateQualityOptions() {
+    var qualities = player.getAvailableQualityLevels();
+    var select = document.getElementById('qualitySelect');
+    if (qualities && qualities.length > 0) {
+        select.innerHTML = '<option value="default">Auto</option>';
+        qualities.forEach(function(q) {
+            var label = q.toUpperCase().replace('HD', 'p HD').replace('LARGE', '480p').replace('MEDIUM', '360p').replace('SMALL', '240p').replace('TINY', '144p');
+            select.innerHTML += '<option value="'+q+'">'+label+'</option>';
+        });
+    }
+  }
+
+  document.getElementById('progress').addEventListener('input', function() { dragging = true; });
+  document.getElementById('progress').addEventListener('change', function() {
+    player.seekTo((this.value / 100) * player.getDuration());
+    dragging = false;
+  });
+
+  document.getElementById('speedSelect').addEventListener('change', function() { player.setPlaybackRate(parseFloat(this.value)); });
+  document.getElementById('qualitySelect').addEventListener('change', function() { 
+      player.setPlaybackQuality(this.value); 
+      player.seekTo(player.getCurrentTime(), true);
+  });
+
+  document.getElementById('fsBtn').addEventListener('click', function() {
+    var el = document.getElementById('iframe-container');
+    if (!document.fullscreenElement) el.requestFullscreen(); else document.exitFullscreen();
+  });
+</script>
+</body>
+</html>
