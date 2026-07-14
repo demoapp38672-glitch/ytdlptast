@@ -1,5 +1,6 @@
 <?php
 // mydomina.php
+// Usage: mydomina.php?id=VIDEO_ID
 $videoId = isset($_GET['id']) ? preg_replace('/[^a-zA-Z0-9_-]/', '', $_GET['id']) : '';
 if (!$videoId) {
     echo "No video id provided. Use ?id=VIDEO_ID";
@@ -11,192 +12,405 @@ if (!$videoId) {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>MyDomina Pro Player</title>
+<title>MyDomina Player — <?php echo htmlspecialchars($videoId, ENT_QUOTES); ?></title>
 <style>
-  html,body{height:100%;margin:0;background:#000;color:#fff;font-family:system-ui, Arial;overflow:hidden;}
-  .player-wrap{position:relative;width:100%;height:100vh;display:flex;align-items:center;justify-content:center;}
+  html,body{height:100%;margin:0;background:#000;color:#fff;font-family:Inter, system-ui, Arial;}
+  .player-wrap{position:relative;width:100%;height:100vh;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center;}
   .iframe-container{position:relative;width:100%;height:100%;background:#000;}
   #player iframe{position:absolute; top:0; left:0; width:100%; height:100%; border:0; z-index:10;}
 
-  /* Click Zones */
-  .skip-zone { position: absolute; top: 0; bottom: 80px; width: 42%; z-index: 55; background: transparent; }
-  .skip-left { left: 0; }
-  .skip-right { right: 0; }
+  /* Interaction blocker (active when controls hidden) */
+  .interaction-blocker { position:absolute; inset:0; z-index:55; background: rgba(0,0,0,0); pointer-events:none; visibility:hidden; }
+  .interaction-blocker.active { pointer-events:auto; visibility:visible; }
 
-  /* Center Pause Area (માત્ર 150px વિસ્તારમાં જ સિંગલ ક્લિક કામ કરશે) */
-  .center-pause-zone { 
-      position: absolute; top: 50%; left: 50%; 
-      transform: translate(-50%, -50%); 
-      width: 160px; height: 160px; 
-      z-index: 56; background: transparent; cursor: pointer;
-  }
-
-  /* Blockers */
-  .top-blocker{position:absolute;top:0;left:0;width:100%;height:60px;z-index:57;}
-  .logo-blocker{position:absolute;right:0;bottom:75px;width:100px;height:45px;z-index:57;}
-
-  /* Feedback Labels */
-  .skip-label { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.15); color: white; padding: 15px; border-radius: 50%; font-size: 13px; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 58; backdrop-filter: blur(5px); }
-  .skip-label.show { opacity: 1; }
-
-  /* Pause Overlay */
-  .pause-overlay{
-      position:absolute; inset:0; z-index:54; 
-      display:flex; align-items:center; justify-content:center; 
-      background: rgba(0,0,0,0.1); visibility:hidden; opacity:0; transition: opacity 0.2s;
-  }
+  /* Pause overlay */
+  .pause-overlay{position:absolute; inset:0; z-index:59; display:flex; align-items:center; justify-content:center; background: rgba(0,0,0,0.32); backdrop-filter: blur(1px); visibility:hidden; opacity:0; transition: opacity 180ms ease, visibility 180ms; pointer-events:auto; }
   .pause-overlay.visible{ visibility:visible; opacity:1; }
-  .big-play { width:70px; height:70px; border-radius:50%; background: rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; border: 1px solid rgba(255,255,255,0.4); }
+  .pause-overlay .big-play { width:96px;height:96px;border-radius:50%; background: rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; border: 2px solid rgba(255,255,255,0.12); cursor:pointer; transition: transform .12s ease; }
+  .pause-overlay .big-play:active{ transform: scale(.98); }
+  .pause-overlay svg { width:40px;height:40px; color:#fff; }
 
-  /* Controls */
+  .top-blocker{position:absolute;top:0;left:0;width:100%;height:110px;z-index:48;background:rgba(0,0,0,0);pointer-events:auto;}
+  .logo-blocker{position:absolute;right:8px;bottom:8px;width:72px;height:36px;z-index:49;background:rgba(0,0,0,0);pointer-events:auto;border-radius:4px;}
+
+  /* Controls overlay (auto-hide) */
   .controls-overlay{
-    position:absolute; bottom:15px; left:50%; transform:translateX(-50%);
-    width:calc(100% - 30px); max-width:1100px;
-    display:flex; gap:10px; align-items:center; padding:10px;
-    background: transparent; z-index:60; transition: opacity 0.3s;
+    position:absolute;
+    bottom:12px;
+    left:50%;
+    transform:translateX(-50%);
+    width:calc(100% - 40px);
+    max-width:1200px;
+    display:flex;
+    gap:10px;
+    align-items:center;
+    padding:10px 12px;
+    background:linear-gradient(180deg, rgba(0,0,0,0.35), rgba(0,0,0,0.15));
+    border-radius:10px;
+    box-shadow:0 6px 20px rgba(0,0,0,0.6);
+    z-index:60;
+    backdrop-filter: blur(6px);
+    pointer-events:auto;
+    transition: transform 180ms ease, opacity 180ms ease;
+    opacity:1;
   }
-  .controls-overlay.hidden{ opacity:0; pointer-events:none; }
+  .controls-overlay.hidden{
+    opacity:0;
+    transform: translateX(-50%) translateY(8px);
+    pointer-events:none;
+  }
 
-  .btn { background: rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.3); padding:6px 12px; border-radius:5px; color:#fff; cursor:pointer; font-size:13px; }
-  .progress { flex-grow:1; cursor:pointer; accent-color: #f00; height: 5px; }
-  .control-select { background: rgba(0,0,0,0.6); color:#fff; border:1px solid rgba(255,255,255,0.3); padding:5px; border-radius:4px; font-size:12px; }
+  .btn {background: rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.06);padding:8px 10px;border-radius:8px;color:#fff;cursor:pointer;font-size:14px;display:inline-flex;gap:8px;align-items:center;}
+  .play-icon{width:16px;height:16px;display:inline-block}
+  .progress {-webkit-appearance:none;appearance:none;width:100%;height:6px;background:rgba(255,255,255,0.12);border-radius:6px;outline:none;margin:0 8px;cursor:pointer;}
+  .progress::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:#fff;border:2px solid rgba(0,0,0,0.3);margin-top:-3px;}
+  .time {font-size:13px;min-width:72px;text-align:center;}
+  select.control-select {background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.06);padding:6px 8px;border-radius:6px;font-size:13px;}
+
+  @media (max-width:640px){
+    .controls-overlay{flex-wrap:wrap;gap:6px;bottom:8px;padding:8px}
+    .time{min-width:56px;font-size:12px}
+    .logo-blocker { right:6px; bottom:48px; }
+  }
 </style>
 </head>
 <body>
 <div class="player-wrap" id="playerWrap">
   <div class="iframe-container" id="iframe-container">
     <div id="player"></div>
-    
-    <div class="skip-zone skip-left" id="skipLeft"></div>
-    <div class="skip-zone skip-right" id="skipRight"></div>
-    <div class="center-pause-zone" id="centerPause"></div>
 
-    <div class="skip-label" id="skipLabelLeft" style="left: 15%;">⇠ 10s</div>
-    <div class="skip-label" id="skipLabelRight" style="right: 15%;">10s ⇢</div>
-    
-    <div class="top-blocker"></div>
-    <div class="logo-blocker"></div>
+    <!-- top / logo blockers -->
+    <div class="top-blocker" id="topBlocker" aria-hidden="true"></div>
+    <div class="logo-blocker" id="logoBlocker" aria-hidden="true"></div>
 
-    <div id="pauseOverlay" class="pause-overlay">
-      <div class="big-play"><svg viewBox="0 0 24 24" width="40" height="40" fill="white"><path d="M8 5v14l11-7z"></path></svg></div>
+    <!-- Interaction blocker -->
+    <div class="interaction-blocker" id="interactionBlocker" title="Tap to show controls"></div>
+
+    <!-- Pause overlay -->
+    <div id="pauseOverlay" class="pause-overlay" role="button" aria-hidden="true" title="Click to play">
+      <div class="big-play" id="overlayPlayBtn" aria-hidden="false">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M8 5v14l11-7z" fill="currentColor"></path>
+        </svg>
+      </div>
     </div>
 
-    <div class="controls-overlay" id="controlsOverlay">
-      <button class="btn" id="playBtn">Pause</button>
-      <input type="range" id="progress" class="progress" min="0" max="100" value="0" step="0.1">
-      <div id="timeLabel" style="font-size:12px; min-width:85px;">0:00 / 0:00</div>
-      <select id="speedSelect" class="control-select"><option value="0.5">0.5x</option><option value="1" selected>1x</option><option value="1.5">1.5x</option><option value="2">2x</option></select>
-      <select id="qualitySelect" class="control-select"><option value="default">Auto</option></select>
-      <button class="btn" id="fsBtn">Full</button>
+    <!-- Controls overlay -->
+    <div class="controls-overlay" id="controlsOverlay" aria-hidden="false">
+      <button class="btn" id="playBtn" title="Play / Pause">
+        <svg class="play-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path id="playIconPath" d="M8 5v14l11-7z" fill="currentColor"/>
+        </svg>
+        <span id="playText">Play</span>
+      </button>
+
+      <input type="range" id="progress" class="progress" min="0" max="100" value="0" step="0.1" aria-label="Seek timeline">
+      <div class="time" id="timeLabel">0:00 / 0:00</div>
+
+      <label>
+        <select id="speedSelect" class="control-select" title="Speed">
+          <option value="0.25">0.25x</option><option value="0.5">0.5x</option><option value="0.75">0.75x</option>
+          <option value="1" selected>1x</option><option value="1.25">1.25x</option><option value="1.5">1.5x</option><option value="2">2x</option>
+        </select>
+      </label>
+
+      <label>
+        <select id="qualitySelect" class="control-select" title="Quality">
+          <option value="auto">Auto</option>
+        </select>
+      </label>
+
+      <button class="btn" id="fsBtn" title="Fullscreen">Fullscreen</button>
     </div>
   </div>
 </div>
 
 <script>
+  // Load YouTube IFrame API
   var tag = document.createElement('script'); tag.src = "https://www.youtube.com/iframe_api"; document.head.appendChild(tag);
-  var player, videoId = "<?php echo $videoId; ?>", dragging = false;
+
+  var player, videoId = "<?php echo $videoId; ?>", duration = 0, progressDragging = false, progressElem = null;
+  var pauseOverlay = null, controls = null, interactionBlocker = null;
+
+  var autoHideDelay = 5000; // 5 seconds
+  var autoHideTimer = null, userInteracting = false;
 
   function onYouTubeIframeAPIReady() {
     player = new YT.Player('player', {
       height: '100%', width: '100%', videoId: videoId,
-      playerVars: { 
-        'controls': 0, 
-        'modestbranding': 1, 
-        'rel': 0,      // પ્લેલિસ્ટ સજેશન બંધ કરવા (Same channel only)
-        'loop': 1,     // લૂપ માટે
-        'playlist': videoId, // લૂપ કામ કરે તે માટે વિડિયો આઈડી ફરી આપવી પડે
-        'enablejsapi': 1 
+      playerVars: {
+        'controls': 0, 'rel': 0, 'modestbranding': 1, 'iv_load_policy': 3, 'fs': 1,
+        'cc_load_policy': 0, 'enablejsapi': 1, 'playsinline': 1, 'loop':1, 'playlist':videoId
       },
-      events: { 'onReady': onReady, 'onStateChange': onStateChange }
+      events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange, 'onPlaybackQualityChange': onPlaybackQualityChange }
     });
   }
 
-  function onReady() { updateQualityOptions(); setInterval(updateUI, 500); }
+  function onPlayerReady(e){
+    duration = player.getDuration() || 0;
+    progressElem = document.getElementById('progress');
+    pauseOverlay = document.getElementById('pauseOverlay');
+    controls = document.getElementById('controlsOverlay');
+    interactionBlocker = document.getElementById('interactionBlocker');
 
-  function onStateChange(e) {
-    var controls = document.getElementById('controlsOverlay');
-    var overlay = document.getElementById('pauseOverlay');
-    
-    // વિડિયો પૂરો થાય ત્યારે ફરી ચાલુ કરવો
-    if (e.data === YT.PlayerState.ENDED) {
-        player.playVideo(); 
-    }
+    setupControls();
+    populateQualityWithRetry();
+    setInterval(updateProgress, 250);
 
-    if (e.data === YT.PlayerState.PAUSED) { 
-        overlay.classList.add('visible'); 
-        controls.classList.add('hidden'); 
-    } else { 
-        overlay.classList.remove('visible'); 
-        controls.classList.remove('hidden'); 
+    // show controls briefly then auto-hide
+    showControls();
+  }
+
+  function onPlayerStateChange(e){
+    updatePlayButton();
+    if (e.data === YT.PlayerState.PLAYING) {
+      updatePauseOverlay(false);
+      showControls();
+    } else if (e.data === YT.PlayerState.PAUSED) {
+      updatePauseOverlay(true);
+      showControls();
+    } else if (e.data === YT.PlayerState.ENDED) {
+      try { player.seekTo(0); player.playVideo(); } catch(err){ try{player.loadVideoById(videoId,0);}catch(e){} }
     }
   }
 
-  // Double Click Skip Logic
-  function setupSkip(id, sec, label) {
-    let last = 0;
-    document.getElementById(id).addEventListener('click', () => {
-      let now = Date.now();
-      if (now - last < 350) {
-        player.seekTo(player.getCurrentTime() + sec, true);
-        let el = document.getElementById(label);
-        el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 600);
+  function onPlaybackQualityChange(e){ setTimeout(populateQuality,200); }
+
+  /* Controls show/hide + interactionBlocker handling */
+  function showControls() {
+    if (!controls) return;
+    controls.classList.remove('hidden');
+    if (interactionBlocker) { interactionBlocker.classList.remove('active'); }
+    resetAutoHideTimer();
+  }
+
+  function hideControls() {
+    if (!controls) return;
+    if (pauseOverlay && pauseOverlay.classList.contains('visible')) return;
+    controls.classList.add('hidden');
+    if (interactionBlocker) { interactionBlocker.classList.add('active'); }
+    clearAutoHideTimer();
+  }
+
+  function resetAutoHideTimer() {
+    clearAutoHideTimer();
+    autoHideTimer = setTimeout(function(){
+      if (!userInteracting) hideControls();
+    }, autoHideDelay);
+  }
+  function clearAutoHideTimer() { if (autoHideTimer) { clearTimeout(autoHideTimer); autoHideTimer = null; } }
+
+  function registerInteractionHandlers() {
+    var wrap = document.getElementById('playerWrap');
+
+    function onUserActivity(e){ showControls(); }
+
+    controls.addEventListener('pointerdown', function(e){
+      userInteracting = true; clearAutoHideTimer();
+      if (interactionBlocker) interactionBlocker.classList.remove('active');
+    }, {passive:true});
+    document.addEventListener('pointerup', function(e){
+      setTimeout(function(){ userInteracting = false; resetAutoHideTimer(); }, 150);
+    }, {passive:true});
+
+    wrap.addEventListener('mousemove', onUserActivity);
+    wrap.addEventListener('pointermove', onUserActivity);
+    wrap.addEventListener('touchstart', onUserActivity, {passive:true});
+    wrap.addEventListener('click', onUserActivity, {passive:true});
+
+    if (interactionBlocker) {
+      interactionBlocker.addEventListener('click', function(e){
+        e.preventDefault(); e.stopPropagation();
+        showControls();
+      }, {passive:false});
+      ['touchstart','touchend','pointerdown','pointerup','mousedown','mouseup','contextmenu'].forEach(function(ev){
+        interactionBlocker.addEventListener(ev, function(evt){ evt.preventDefault(); evt.stopPropagation(); }, {passive:false});
+      });
+    }
+  }
+
+  function setupControls(){
+    registerInteractionHandlers();
+
+    var playBtn = document.getElementById('playBtn');
+    var overlayPlay = document.getElementById('overlayPlayBtn');
+
+    playBtn.addEventListener('click', function(ev){
+      ev.stopPropagation(); showControls();
+      var state = player.getPlayerState();
+      if (state === YT.PlayerState.PLAYING) player.pauseVideo(); else player.playVideo();
+      updatePlayButton();
+    });
+
+    overlayPlay.addEventListener('click', function(ev){
+      ev.stopPropagation(); try { player.playVideo(); } catch(e){} updatePauseOverlay(false); updatePlayButton(); showControls();
+    });
+
+    pauseOverlay.addEventListener('click', function(ev){
+      ev.stopPropagation(); try { player.playVideo(); } catch(e){} updatePauseOverlay(false); updatePlayButton(); showControls();
+    });
+
+    var progress = document.getElementById('progress');
+    progress.addEventListener('input', function(ev){
+      progressDragging = true; showControls();
+      var pct = parseFloat(progress.value);
+      var target = (pct/100) * (player.getDuration() || duration || 0);
+      document.getElementById('timeLabel').textContent = formatTime(target) + " / " + formatTime(player.getDuration() || duration || 0);
+    });
+    progress.addEventListener('change', function(ev){
+      showControls();
+      var pct = parseFloat(progress.value);
+      var target = (pct/100) * (player.getDuration() || duration || 0);
+      player.seekTo(target, true);
+      progressDragging = false;
+    });
+
+    var speedSelect = document.getElementById('speedSelect');
+    speedSelect.addEventListener('change', function(ev){
+      ev.stopPropagation(); showControls();
+      var val = parseFloat(this.value);
+      try { player.setPlaybackRate(val); } catch(err) {}
+    });
+
+    var qualitySelect = document.getElementById('qualitySelect');
+    qualitySelect.addEventListener('change', function(ev){
+      ev.stopPropagation(); showControls();
+      var q = this.value;
+      try { if (q === 'auto') player.setPlaybackQuality('default'); else player.setPlaybackQuality(q); } catch(e) {}
+    });
+
+    var fsBtn = document.getElementById('fsBtn');
+    fsBtn.addEventListener('click', function(ev){
+      ev.stopPropagation(); showControls();
+      var container = document.getElementById('iframe-container');
+      if (!document.fullscreenElement) {
+        if (container.requestFullscreen) container.requestFullscreen();
+        else if (container.mozRequestFullScreen) container.mozRequestFullScreen();
+        else if (container.webkitRequestFullscreen) container.webkitRequestFullscreen();
+        else if (container.msRequestFullscreen) container.msRequestFullscreen();
+      } else {
+        if (document.exitFullscreen) document.exitFullscreen();
       }
-      last = now;
     });
-  }
-  setupSkip('skipLeft', -10, 'skipLabelLeft');
-  setupSkip('skipRight', 10, 'skipLabelRight');
 
-  // Center Pause
-  document.getElementById('centerPause').addEventListener('click', () => {
-    if (player.getPlayerState() === 1) player.pauseVideo(); else player.playVideo();
-  });
-
-  function updateUI() {
-    if (!player || dragging) return;
-    let cur = player.getCurrentTime(), dur = player.getDuration();
-    if (dur > 0) {
-        document.getElementById('progress').value = (cur / dur) * 100;
-        document.getElementById('timeLabel').textContent = formatTime(cur) + " / " + formatTime(dur);
-    }
-    document.getElementById('playBtn').textContent = player.getPlayerState() === 1 ? 'Pause' : 'Play';
+    resetAutoHideTimer();
   }
 
-  function formatTime(s) {
-    let m = Math.floor(s/60), sec = Math.floor(s%60);
-    return m + ":" + (sec < 10 ? '0' + sec : sec);
-  }
-
-  function updateQualityOptions() {
-    let qualities = player.getAvailableQualityLevels();
-    let select = document.getElementById('qualitySelect');
-    if (qualities && qualities.length > 0) {
-        select.innerHTML = '<option value="default">Auto</option>';
-        qualities.forEach(q => {
-            let label = q.replace('hd', '').replace('large', '480p').replace('medium', '360p').replace('small', '240p').replace('tiny', '144p');
-            if(q.includes('hd')) label += 'p HD';
-            select.innerHTML += `<option value="${q}">${label}</option>`;
-        });
+  function updateProgress(){
+    if (!player || !progressElem) return;
+    var dur = player.getDuration() || duration || 0;
+    if (dur <= 0) return;
+    if (!progressDragging) {
+      var cur = player.getCurrentTime() || 0;
+      var pct = (cur / dur) * 100;
+      progressElem.value = pct;
+      updateTimeLabel();
     }
   }
 
-  // Buttons Logic
-  document.getElementById('playBtn').addEventListener('click', () => {
-    if (player.getPlayerState() === 1) player.pauseVideo(); else player.playVideo();
-  });
-  document.getElementById('progress').addEventListener('input', () => dragging = true);
-  document.getElementById('progress').addEventListener('change', function() {
-    player.seekTo((this.value / 100) * player.getDuration());
-    dragging = false;
-  });
-  document.getElementById('speedSelect').addEventListener('change', e => player.setPlaybackRate(parseFloat(e.target.value)));
-  document.getElementById('qualitySelect').addEventListener('change', e => {
-      player.setPlaybackQuality(e.target.value);
-      player.seekTo(player.getCurrentTime(), true);
-  });
-  document.getElementById('fsBtn').addEventListener('click', () => {
-    let el = document.getElementById('iframe-container');
-    if (!document.fullscreenElement) el.requestFullscreen(); else document.exitFullscreen();
+  function updateTimeLabel(){
+    if (!player) return;
+    var cur = player.getCurrentTime() || 0;
+    var dur = player.getDuration() || duration || 0;
+    document.getElementById('timeLabel').textContent = formatTime(cur) + " / " + formatTime(dur);
+  }
+
+  function updatePlayButton(){
+    if (!player) return;
+    var state = player.getPlayerState();
+    var isPlaying = (state === YT.PlayerState.PLAYING);
+    var playText = document.getElementById('playText');
+    var playIconPath = document.getElementById('playIconPath');
+    if (isPlaying) {
+      playText.textContent = 'Pause';
+      playIconPath.setAttribute('d','M6 5h4v14H6z M14 5h4v14h-4z');
+    } else {
+      playText.textContent = 'Play';
+      playIconPath.setAttribute('d','M8 5v14l11-7z');
+    }
+  }
+
+  function updatePauseOverlay(show){
+    if (!pauseOverlay) return;
+    if (show) { pauseOverlay.classList.add('visible'); }
+    else { pauseOverlay.classList.remove('visible'); }
+  }
+
+  // QUALITY helpers (best-effort)
+  function populateQuality(){
+    try {
+      var qList = player.getAvailableQualityLevels ? player.getAvailableQualityLevels() : [];
+      var select = document.getElementById('qualitySelect');
+      var cur = player.getPlaybackQuality ? player.getPlaybackQuality() : 'auto';
+      var optsHtml = '<option value="auto">Auto</option>';
+      if (qList && qList.length) {
+        qList.forEach(function(q){ optsHtml += '<option value="'+q+'">'+q+'</option>'; });
+        select.innerHTML = optsHtml;
+        try { select.value = cur || 'auto'; } catch(e){}
+        return true;
+      } else return false;
+    } catch(err){ return false; }
+  }
+  var qualityRetries = 0, maxQualityRetries = 20;
+  function populateQualityWithRetry(){
+    var ok = populateQuality();
+    if (ok) { qualityRetries = 0; return; }
+    qualityRetries++;
+    if (qualityRetries <= maxQualityRetries) setTimeout(populateQualityWithRetry, 300);
+    else {
+      var select = document.getElementById('qualitySelect');
+      if (select && select.options.length <= 1) {
+        var fav = ['hd1080','hd720','large','medium','small'];
+        var optsHtml = '<option value="auto">Auto</option>';
+        fav.forEach(function(q){ optsHtml += '<option value="'+q+'">'+q+'</option>'; });
+        select.innerHTML = optsHtml;
+      }
+    }
+  }
+
+  function formatTime(sec) {
+    sec = Math.max(0, Math.floor(sec || 0));
+    var h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
+    if (h>0) return h + ":" + String(m).padStart(2,'0') + ":" + String(s).padStart(2,'0');
+    return m + ":" + String(s).padStart(2,'0');
+  }
+
+  // Block top and logo clicks
+  (function blockTopClicks(){
+    var blocker = document.getElementById('topBlocker'); if (!blocker) return;
+    function stopAll(e){ e.preventDefault(); e.stopPropagation(); }
+    ['click','mousedown','mouseup','touchstart','touchend','contextmenu'].forEach(function(evName){
+      blocker.addEventListener(evName, stopAll, {passive:false});
+    });
+    blocker.style.pointerEvents = 'auto';
+  })();
+
+  (function blockLogoClicks(){
+    var blocker = document.getElementById('logoBlocker'); if (!blocker) return;
+    function stopAll(e){ e.preventDefault(); e.stopPropagation(); }
+    ['click','mousedown','mouseup','touchstart','touchend','pointerdown','pointerup','contextmenu'].forEach(function(evName){
+      blocker.addEventListener(evName, stopAll, {passive:false});
+    });
+    blocker.style.pointerEvents = 'auto';
+  })();
+
+  // Keyboard shortcuts reveal controls when used
+  document.addEventListener('keydown', function(e){
+    if (!player) return;
+    showControls();
+    if (e.key === ' ' || e.code === 'Space') {
+      e.preventDefault();
+      var s = player.getPlayerState();
+      if (s === YT.PlayerState.PLAYING) player.pauseVideo(); else player.playVideo();
+      updatePlayButton();
+    } else if (e.key === 'ArrowRight') {
+      var t = player.getCurrentTime() || 0; player.seekTo(t + 5, true);
+    } else if (e.key === 'ArrowLeft') {
+      var t = player.getCurrentTime() || 0; player.seekTo(Math.max(0, t - 5), true);
+    } else if (e.key === 'f' || e.key === 'F') {
+      var container = document.getElementById('iframe-container');
+      if (!document.fullscreenElement) container.requestFullscreen().catch(()=>{}); else document.exitFullscreen().catch(()=>{});
+    }
   });
 </script>
 </body>
