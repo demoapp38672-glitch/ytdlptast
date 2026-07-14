@@ -1,3 +1,18 @@
+import yt_dlp
+
+ydl_opts = {
+    'quiet': True,
+    'no_warnings': True,
+    'extractor_args': {
+        'youtubepot-bgutilhttp': {
+            'base_url': 'http://bgutil-provider:4416'  # Railway internal service name
+        }
+    }
+}
+
+with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+    info = ydl.extract_info(url, download=False)
+    # ... બાકીનો કોડ ...
 from flask import Flask, request, jsonify
 import yt_dlp
 import os
