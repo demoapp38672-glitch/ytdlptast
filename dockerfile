@@ -1,5 +1,4 @@
-# તમારા એપ માટે Dockerfile (ઉદાહરણ)
-FROM python:3.11-slim
+FROM python:3.11-slim  # 3.13 નહીં, 3.11 વાપરો
 
 WORKDIR /app
 
