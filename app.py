@@ -1,12 +1,8 @@
 from flask import Flask, request, jsonify
 import yt_dlp
 import os
-import logging
 
 app = Flask(__name__)
-
-# લોગીંગ સેટ કરો
-logging.basicConfig(level=logging.DEBUG)
 
 @app.route('/')
 def home():
@@ -19,20 +15,13 @@ def get_links():
         return jsonify({"error": "url parameter required"}), 400
     
     try:
-        # PO Token સાથે yt-dlp ઓપ્શન્સ
+        # 🔥 અહીં ફેરફાર કરો - cookiefile ઉમેરો
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
-            'extractor_args': {
-                'youtubepot-bgutilhttp': {
-                    'base_url': 'http://localhost:4416'  # જો Docker compose વાપરો
-                }
-            }
+            'cookiefile': 'cookies.txt',  # <--- આ લાઇન ઉમેરો
+            # PO Token હોય તો તે પણ રાખો, પણ cookies વધુ પ્રાધાન્ય લેશે
         }
-        
-        # જો PO Token કામ ન કરે, તો cookies ટ્રાય કરો
-        if os.path.exists('cookies.txt'):
-            ydl_opts['cookiefile'] = 'cookies.txt'
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -62,9 +51,8 @@ def get_links():
             })
             
     except Exception as e:
-        app.logger.error(f"Error: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    app.run(host='0.0.0.0', port=port)
